@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.testing.logging.TestLogEvent
+
 plugins {
     id("application")
     id("org.openjfx.javafxplugin") version "0.1.0"
@@ -39,10 +41,23 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("org.assertj:assertj-core:3.25.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    testImplementation("org.testfx:testfx-core:4.0.18")
+    testImplementation("org.testfx:testfx-junit5:4.0.18")
+
+    testImplementation("org.hamcrest:hamcrest:3.0")
 }
 
 tasks.test {
     useJUnitPlatform()
+    jvmArgs = listOf(
+        "--add-opens", "javafx.graphics/com.sun.javafx.application=ALL-UNNAMED",
+        "--add-opens", "javafx.graphics/com.sun.javafx.tk.quantum=ALL-UNNAMED",
+        "--add-opens", "javafx.base/com.sun.javafx.runtime=ALL-UNNAMED"
+    )
+    testLogging {
+        events(TestLogEvent.FAILED, TestLogEvent.PASSED, TestLogEvent.SKIPPED)
+    }
 }
 
 jlink {
