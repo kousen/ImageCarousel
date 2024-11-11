@@ -2,12 +2,10 @@ package edu.trincoll;
 
 import javafx.event.EventHandler;
 import javafx.geometry.Point2D;
-import javafx.scene.Cursor;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
-import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.StackPane;
 
 public class ZoomController {
@@ -43,59 +41,60 @@ public class ZoomController {
     }
 
     private void setupZoomHandling() {
-        // Handle scroll wheel with modifier key
-        scrollPane.addEventFilter(ScrollEvent.ANY, event -> {
-            if (event.isMetaDown() || event.isControlDown()) {  // Meta is Command on Mac
-                event.consume();
-                double zoomFactor = event.getDeltaY() > 0 ? ZOOM_FACTOR : 1 / ZOOM_FACTOR;
-                zoom(zoomFactor, new Point2D(event.getX(), event.getY()));
-            }
-        });
-
-        // Handle keyboard shortcuts
-        EventHandler<KeyEvent> zoomKeyHandler = event -> {
-            if (event.isMetaDown() || event.isControlDown()) {
-                KeyCode code = event.getCode();
-
-                // Handle zoom in: Plus or Equals key
-                if (code == KeyCode.ADD || code == KeyCode.EQUALS) {
+        EventHandler<KeyEvent> keyHandler = event -> {
+            if (event.isControlDown()) {
+                if (event.getCode() == KeyCode.EQUALS ||
+                    event.getCode() == KeyCode.PLUS ||
+                    event.getCode() == KeyCode.ADD) {
                     event.consume();
                     zoom(ZOOM_FACTOR, getCenterPoint());
                 }
-                // Handle zoom out: Minus key
-                else if (code == KeyCode.SUBTRACT || code == KeyCode.MINUS) {
+                else if (event.getCode() == KeyCode.MINUS ||
+                         event.getCode() == KeyCode.SUBTRACT) {
                     event.consume();
                     zoom(1 / ZOOM_FACTOR, getCenterPoint());
                 }
             }
         };
 
-        // Add the handler to all relevant components
-        scrollPane.addEventFilter(KeyEvent.KEY_PRESSED, zoomKeyHandler);
-        zoomPane.addEventFilter(KeyEvent.KEY_PRESSED, zoomKeyHandler);
-        currentImageView.addEventFilter(KeyEvent.KEY_PRESSED, zoomKeyHandler);
-
-        // Reset zoom on double-click
-        zoomPane.setOnMouseClicked(event -> {
-            if (event.getClickCount() == 2) {
-                resetZoom();
+        // Add key handler to scene
+        scrollPane.sceneProperty().addListener((obs, oldScene, newScene) -> {
+            if (newScene != null) {
+                newScene.addEventFilter(KeyEvent.KEY_PRESSED, keyHandler);
             }
         });
 
-        // Add visual feedback for zoom mode
-        scrollPane.addEventHandler(KeyEvent.KEY_PRESSED,
-                e -> {
-                    if (e.isMetaDown() || e.isControlDown()) {
-                        scrollPane.setCursor(Cursor.CROSSHAIR);
-                    }
-                });
+        // Also add to individual components for redundancy
+        scrollPane.addEventFilter(KeyEvent.KEY_PRESSED, keyHandler);
+        zoomPane.addEventFilter(KeyEvent.KEY_PRESSED, keyHandler);
+        currentImageView.addEventFilter(KeyEvent.KEY_PRESSED, keyHandler);
+    }
 
-        scrollPane.addEventHandler(KeyEvent.KEY_RELEASED,
-                e -> {
-                    if (!e.isMetaDown() && !e.isControlDown()) {
-                        scrollPane.setCursor(Cursor.DEFAULT);
-                    }
-                });
+    private Point2D getCenterPoint() {
+        return new Point2D(
+                scrollPane.getViewportBounds().getWidth() / 2,
+                scrollPane.getViewportBounds().getHeight() / 2
+        );
+    }
+
+    public void zoom(double factor, Point2D pivot) {
+        double newZoom = currentZoom * factor;
+
+        if (newZoom >= MIN_ZOOM && newZoom <= MAX_ZOOM) {
+            currentZoom = newZoom;
+            currentImageView.setScaleX(currentZoom);
+            currentImageView.setScaleY(currentZoom);
+
+            double mouseX = pivot.getX();
+            double mouseY = pivot.getY();
+            double relativeX = (mouseX - currentImageView.getTranslateX()) / currentImageView.getScaleX();
+            double relativeY = (mouseY - currentImageView.getTranslateY()) / currentImageView.getScaleY();
+            double newX = mouseX - (relativeX * currentZoom);
+            double newY = mouseY - (relativeY * currentZoom);
+
+            currentImageView.setTranslateX(newX);
+            currentImageView.setTranslateY(newY);
+        }
     }
 
     private void setupDragHandling() {
@@ -117,38 +116,6 @@ public class ZoomController {
         zoomPane.setOnMouseReleased(e -> dragAnchor = null);
     }
 
-    private Point2D getCenterPoint() {
-        return new Point2D(
-                scrollPane.getViewportBounds().getWidth() / 2,
-                scrollPane.getViewportBounds().getHeight() / 2
-        );
-    }
-
-    private void zoom(double factor, Point2D pivot) {
-        double newZoom = currentZoom * factor;
-
-        if (newZoom >= MIN_ZOOM && newZoom <= MAX_ZOOM) {
-            currentZoom = newZoom;
-
-            double mouseX = pivot.getX();
-            double mouseY = pivot.getY();
-
-            double relativeX = (mouseX - currentImageView.getTranslateX()) / currentImageView.getScaleX();
-            double relativeY = (mouseY - currentImageView.getTranslateY()) / currentImageView.getScaleY();
-
-            currentImageView.setScaleX(currentZoom);
-            currentImageView.setScaleY(currentZoom);
-
-            double newX = mouseX - (relativeX * currentZoom);
-            double newY = mouseY - (relativeY * currentZoom);
-
-            currentImageView.setTranslateX(newX);
-            currentImageView.setTranslateY(newY);
-
-            System.out.printf("Zoom: %.0f%%%n", currentZoom * 100);
-        }
-    }
-
     public void resetZoom() {
         currentZoom = 1.0;
         currentImageView.setScaleX(1.0);
@@ -168,17 +135,9 @@ public class ZoomController {
         zoomPane.getChildren().clear();
         this.currentImageView = newImageView;
         zoomPane.getChildren().add(newImageView);
+    }
 
-        double viewportWidth = scrollPane.getViewportBounds().getWidth();
-        double viewportHeight = scrollPane.getViewportBounds().getHeight();
-
-        if (viewportWidth > 0 && viewportHeight > 0) {
-            double scaleX = viewportWidth / newImageView.getImage().getWidth();
-            double scaleY = viewportHeight / newImageView.getImage().getHeight();
-            double scale = Math.min(scaleX, scaleY);
-
-            newImageView.setFitWidth(newImageView.getImage().getWidth() * scale);
-            newImageView.setFitHeight(newImageView.getImage().getHeight() * scale);
-        }
+    public double getCurrentZoom() {
+        return currentZoom;
     }
 }

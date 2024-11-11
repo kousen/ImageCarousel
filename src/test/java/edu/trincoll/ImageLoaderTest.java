@@ -22,4 +22,11 @@ public class ImageLoaderTest extends ApplicationTest {
         assertFalse(images.isEmpty());
         assertEquals(3, images.size());
     }
+
+    @Test
+    public void testLoadImagesWithUnsupportedFiles() {
+        ImageLoader imageLoader = new ImageLoader(Paths.get("src/main/resources"));
+        List<Image> images = imageLoader.loadImages();
+        assertFalse(images.isEmpty(), "Expected images to be loaded, ignoring unsupported files");
+    }
 }

@@ -45,6 +45,8 @@ public class ImageCarousel extends Application {
     private boolean showingThumbnails = false;
     private Stage primaryStage;
 
+    private Settings currentSettings;
+
     @Override
     public void start(Stage primaryStage) {
         initializeComponents(primaryStage);
@@ -57,6 +59,7 @@ public class ImageCarousel extends Application {
     private void initializeComponents(Stage stage) {
         this.primaryStage = stage;
         prefsManager = new PreferencesManager();
+        currentSettings = prefsManager.loadSettings();  // Load saved settings
         statusBar = new StatusBar();
         transitionController = new TransitionController(imageContainer);
         thumbnailView = new ThumbnailView();
@@ -158,14 +161,69 @@ public class ImageCarousel extends Application {
 
     private MenuBar createMenuBar() {
         MenuBar menuBar = new MenuBar();
+
+        // File menu
         Menu fileMenu = new Menu("File");
         MenuItem openMenuItem = new MenuItem("Open Directory...");
-
         openMenuItem.setOnAction(event -> handleOpenDirectory());
         fileMenu.getItems().add(openMenuItem);
-        menuBar.getMenus().add(fileMenu);
+
+        // Settings menu
+        Menu settingsMenu = new Menu("Settings");
+        MenuItem settingsMenuItem = new MenuItem("Carousel Settings...");
+        settingsMenuItem.setOnAction(event -> showSettingsDialog());
+        settingsMenu.getItems().add(settingsMenuItem);
+
+        menuBar.getMenus().addAll(fileMenu, settingsMenu);
 
         return menuBar;
+    }
+
+    private void showSettingsDialog() {
+        SettingsDialog dialog = new SettingsDialog(currentSettings);
+        dialog.showAndWait().ifPresent(newSettings -> {
+            // Store old settings to check what changed
+            Settings oldSettings = currentSettings;
+            currentSettings = newSettings;
+            prefsManager.saveSettings(newSettings);
+
+            // If rotation speed changed and carousel is running, restart it
+            if (oldSettings.rotationSpeed() != newSettings.rotationSpeed() &&
+                rotationTimeline != null && !isPaused) {
+                startImageRotation();
+            }
+
+            // Update status bar to reflect new settings
+            updateStatusBar();
+        });
+    }
+
+    private void updateStatusBar() {
+        StringBuilder info = new StringBuilder();
+
+        if (images != null && !images.isEmpty()) {
+            Image currentImage = images.get(currentIndex);
+            info.append(String.format("Image %d of %d", currentIndex + 1, images.size()));
+            info.append(String.format(" (%dx%d)", (int)currentImage.getWidth(),
+                    (int)currentImage.getHeight()));
+
+            if (currentDirectory != null) {
+                try {
+                    String filename = prefsManager.getLastDirectory()
+                            .relativize(currentDirectory)
+                            .toString();
+                    info.append(" - ").append(filename);
+                } catch (IllegalArgumentException e) {
+                    info.append(" - ").append(currentDirectory.getFileName());
+                }
+            }
+
+            // Add current transition type
+            info.append(" | Transition: ")
+                    .append(currentSettings.transitionType().getDisplayName());
+        }
+
+        statusBar.updateImageInfo(info.toString());
     }
 
     private void handleOpenDirectory() {
@@ -251,7 +309,7 @@ public class ImageCarousel extends Application {
         }
     }
 
-    private void loadImages(Path directory) {
+    public void loadImages(Path directory) {
         try {
             currentDirectory = directory;
             System.out.println("Loading images from: " + directory.toAbsolutePath());
@@ -307,7 +365,8 @@ public class ImageCarousel extends Application {
     private void startImageRotation() {
         stopImageRotation();
         rotationTimeline = new Timeline(
-                new KeyFrame(Duration.seconds(3), event -> showNextImage())
+                new KeyFrame(Duration.seconds(currentSettings.rotationSpeed()),
+                        event -> showNextImage())
         );
         rotationTimeline.setCycleCount(Timeline.INDEFINITE);
         rotationTimeline.play();
@@ -319,7 +378,7 @@ public class ImageCarousel extends Application {
         }
     }
 
-    private void setImage(Image image) {
+    public void setImage(Image image) {
         if (image == null) return;
 
         ImageView oldView = getCurrentImageView();
@@ -342,7 +401,8 @@ public class ImageCarousel extends Application {
         newView.setFitHeight(image.getHeight() * scale);
 
         if (oldView != null && !showingThumbnails) {
-            transitionController.transitionToNewImage(oldView, newView);
+            transitionController.transition(oldView, newView,
+                    currentSettings.transitionType());
         } else {
             imageContainer.getChildren().clear();
             imageContainer.getChildren().add(newView);
@@ -354,7 +414,7 @@ public class ImageCarousel extends Application {
             thumbnailView.updateSelection(currentIndex);
         }
 
-        updateStatusBar(image);
+        updateStatusBar();  // Use the new updateStatusBar method
     }
 
     private ImageView getCurrentImageView() {
@@ -397,5 +457,22 @@ public class ImageCarousel extends Application {
 
     public static void main(String[] args) {
         launch(args);
+    }
+
+    // Getters for testing
+    public int getCurrentIndex() {
+        return currentIndex;
+    }
+
+    public List<Image> getImages() {
+        return images;
+    }
+
+    public Button getNextButton() {
+        return nextButton;
+    }
+
+    public Button getPreviousButton() {
+        return prevButton;
     }
 }

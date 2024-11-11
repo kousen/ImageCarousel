@@ -25,14 +25,20 @@ public class SettingsDialog extends Dialog<Settings> {
         speedSlider.setBlockIncrement(1);
         speedSlider.setSnapToTicks(true);
 
-        // Create the transition type combo
+        // Create the transition type combo with better labels
         transitionCombo = new ComboBox<>();
         transitionCombo.getItems().addAll(TransitionType.values());
         transitionCombo.setValue(currentSettings.transitionType());
         transitionCombo.setConverter(new StringConverter<>() {
             @Override
             public String toString(TransitionType type) {
-                return type != null ? type.getDisplayName() : "";
+                if (type == null) return "";
+                return switch (type) {
+                    case NONE -> "No Transition";
+                    case FADE -> "Fade Effect";
+                    case SLIDE_LEFT -> "Slide Left";
+                    case SLIDE_RIGHT -> "Slide Right";
+                };
             }
 
             @Override
@@ -45,12 +51,15 @@ public class SettingsDialog extends Dialog<Settings> {
         GridPane grid = new GridPane();
         grid.setHgap(10);
         grid.setVgap(10);
-        grid.setPadding(new Insets(20, 150, 10, 10));
+        grid.setPadding(new Insets(20, 20, 10, 10));
 
-        grid.add(new Label("Rotation Speed (seconds):"), 0, 0);
-        grid.add(speedSlider, 1, 0);
-        grid.add(new Label("Transition Effect:"), 0, 1);
-        grid.add(transitionCombo, 1, 1);
+        // Add labels and controls with better descriptions
+        grid.add(new Label("Rotation Speed:"), 0, 0);
+        grid.add(new Label("(seconds between images)"), 1, 0);
+        grid.add(speedSlider, 0, 1, 2, 1); // Span 2 columns
+
+        grid.add(new Label("Transition Effect:"), 0, 2);
+        grid.add(transitionCombo, 0, 3, 2, 1); // Span 2 columns
 
         getDialogPane().setContent(grid);
 
@@ -61,5 +70,8 @@ public class SettingsDialog extends Dialog<Settings> {
             }
             return null;
         });
+
+        // Set minimum dialog width for better appearance
+        getDialogPane().setMinWidth(300);
     }
 }

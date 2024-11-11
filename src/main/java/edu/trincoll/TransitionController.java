@@ -1,6 +1,8 @@
 package edu.trincoll;
 
-import javafx.animation.*;
+import javafx.animation.FadeTransition;
+import javafx.animation.ParallelTransition;
+import javafx.animation.TranslateTransition;
 import javafx.scene.image.ImageView;
 import javafx.scene.layout.StackPane;
 import javafx.util.Duration;
@@ -8,19 +10,19 @@ import javafx.util.Duration;
 public class TransitionController {
     private static final Duration TRANSITION_DURATION = Duration.millis(500);
     private final StackPane container;
-    private Timeline timeline;
+    private ParallelTransition currentTransition;
 
     public TransitionController(StackPane container) {
         this.container = container;
     }
 
-    public void transitionToNewImage(ImageView oldView, ImageView newView) {
-        // Stop any ongoing transitions
-        if (timeline != null) {
-            timeline.stop();
+    public void transition(ImageView oldView, ImageView newView, TransitionType type) {
+        // Stop any ongoing transition
+        if (currentTransition != null) {
+            currentTransition.stop();
         }
 
-        // Clear any existing transforms
+        // Reset any existing transforms
         if (oldView != null) {
             oldView.setTranslateX(0);
             oldView.setOpacity(1.0);
@@ -33,11 +35,18 @@ public class TransitionController {
         newView.setScaleX(1.0);
         newView.setScaleY(1.0);
 
-        // Add new view to container but keep it invisible
+        switch (type) {
+            case NONE -> container.getChildren().setAll(newView);
+            case FADE -> performFadeTransition(oldView, newView);
+            case SLIDE_LEFT -> performSlideTransition(oldView, newView, -1);
+            case SLIDE_RIGHT -> performSlideTransition(oldView, newView, 1);
+        }
+    }
+
+    private void performFadeTransition(ImageView oldView, ImageView newView) {
         newView.setOpacity(0);
         container.getChildren().add(newView);
 
-        // Create fade transition
         FadeTransition fadeOut = new FadeTransition(TRANSITION_DURATION, oldView);
         fadeOut.setFromValue(1.0);
         fadeOut.setToValue(0.0);
@@ -46,33 +55,27 @@ public class TransitionController {
         fadeIn.setFromValue(0.0);
         fadeIn.setToValue(1.0);
 
-        // Create scale transition for additional effect
-        ScaleTransition scaleOut = new ScaleTransition(TRANSITION_DURATION, oldView);
-        scaleOut.setFromX(1.0);
-        scaleOut.setFromY(1.0);
-        scaleOut.setToX(0.95);
-        scaleOut.setToY(0.95);
+        currentTransition = new ParallelTransition(fadeOut, fadeIn);
+        currentTransition.setOnFinished(e -> container.getChildren().remove(oldView));
+        currentTransition.play();
+    }
 
-        ScaleTransition scaleIn = new ScaleTransition(TRANSITION_DURATION, newView);
-        scaleIn.setFromX(1.05);
-        scaleIn.setFromY(1.05);
-        scaleIn.setToX(1.0);
-        scaleIn.setToY(1.0);
+    private void performSlideTransition(ImageView oldView, ImageView newView, double direction) {
+        double width = container.getWidth();
+        newView.setTranslateX(width * direction);
+        container.getChildren().add(newView);
 
-        // Combine transitions
-        ParallelTransition transition = new ParallelTransition(
-                fadeOut, fadeIn, scaleOut, scaleIn
-        );
+        TranslateTransition slideOut = new TranslateTransition(TRANSITION_DURATION, oldView);
+        slideOut.setToX(-width * direction);
 
-        // Clean up after transition
-        transition.setOnFinished(e -> {
+        TranslateTransition slideIn = new TranslateTransition(TRANSITION_DURATION, newView);
+        slideIn.setToX(0);
+
+        currentTransition = new ParallelTransition(slideOut, slideIn);
+        currentTransition.setOnFinished(e -> {
             container.getChildren().remove(oldView);
-            // Reset any transformations
-            newView.setTranslateX(0);
-            newView.setScaleX(1.0);
-            newView.setScaleY(1.0);
+            oldView.setTranslateX(0);
         });
-
-        transition.play();
+        currentTransition.play();
     }
 }

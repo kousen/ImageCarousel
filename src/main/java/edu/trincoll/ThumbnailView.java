@@ -17,13 +17,15 @@ public class ThumbnailView {
     private final ScrollPane scrollPane;
     private final FlowPane flowPane;
     private Consumer<Integer> onThumbnailSelected;
+    private int selectedIndex = -1;  // Add to track selection
 
     public ThumbnailView() {
         flowPane = new FlowPane();
         flowPane.setHgap(SPACING);
         flowPane.setVgap(SPACING);
         flowPane.setPadding(new Insets(SPACING));
-        flowPane.setPrefWrapLength(THUMB_SIZE * 5 + SPACING * 4); // Show 5 thumbnails per row by default
+        flowPane.setPrefWrapLength(THUMB_SIZE * 5 + SPACING * 4);
+        flowPane.getStyleClass().add("flow-pane");  // Add for test lookup
 
         scrollPane = new ScrollPane(flowPane);
         scrollPane.setFitToWidth(true);
@@ -33,13 +35,15 @@ public class ThumbnailView {
 
     public void setImages(List<Image> images, int currentIndex) {
         flowPane.getChildren().clear();
+        selectedIndex = currentIndex;  // Track initial selection
 
         for (int i = 0; i < images.size(); i++) {
             Image image = images.get(i);
             ImageView thumbView = createThumbnail(image);
 
-            // Highlight current image
             StackPane thumbContainer = new StackPane(thumbView);
+            thumbContainer.getStyleClass().add("stack-pane");  // Add for test lookup
+
             if (i == currentIndex) {
                 thumbContainer.setStyle("-fx-border-color: white; -fx-border-width: 2;");
             }
@@ -47,6 +51,7 @@ public class ThumbnailView {
             final int index = i;
             thumbContainer.setOnMouseClicked(e -> {
                 if (onThumbnailSelected != null) {
+                    selectedIndex = index;  // Update selection on click
                     onThumbnailSelected.accept(index);
                 }
             });
@@ -80,6 +85,7 @@ public class ThumbnailView {
     }
 
     public void updateSelection(int newIndex) {
+        selectedIndex = newIndex;  // Update tracked selection
         for (int i = 0; i < flowPane.getChildren().size(); i++) {
             StackPane thumbContainer = (StackPane) flowPane.getChildren().get(i);
             if (i == newIndex) {
@@ -89,5 +95,9 @@ public class ThumbnailView {
             }
         }
         scrollToThumbnail(newIndex);
+    }
+
+    public int getSelectedIndex() {
+        return selectedIndex;  // Return tracked selection instead of checking styles
     }
 }
