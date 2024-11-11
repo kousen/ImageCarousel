@@ -69,27 +69,58 @@ jlink {
     ))
 
     launcher {
-        name = "imagecarousel"
+        name = "ImageCarousel"
     }
 
     jpackage {
-        // Common options
-        installerName = "ImageCarousel"
-        appVersion = "1.0.0"
+        // Common options for all platforms
+        imageOptions = listOf(
+            "--vendor", "Trinity College",
+            "--copyright", "Copyright 2024",
+            "--name", "ImageCarousel",
+            "--description", "Image Carousel Application"
+        )
+        skipInstaller = false
+    }
+}
 
-        // Windows-specific options
-        if (org.gradle.internal.os.OperatingSystem.current().isWindows) {
-            installerOptions = listOf("--win-dir-chooser", "--win-menu", "--win-shortcut")
+tasks {
+    register<org.beryx.jlink.JPackageTask>("jpackageMac") {
+        dependsOn("jlink")
+        doFirst {
+            jpackageData.apply {
+                targetPlatformName = "mac"
+                imageOptions = listOf(
+                    "--vendor", "Trinity College",
+                    "--copyright", "Copyright 2024",
+                    "--name", "ImageCarousel",
+                    "--description", "Image Carousel Application"
+                )
+                installerType = "pkg"
+                installerOptions = listOf("--mac-package-name", "ImageCarousel")
+            }
         }
+    }
 
-        // macOS-specific options
-        if (org.gradle.internal.os.OperatingSystem.current().isMacOsX) {
-            installerOptions = listOf("--mac-package-name", "Image Carousel")
-        }
-
-        // Linux-specific options
-        if (org.gradle.internal.os.OperatingSystem.current().isLinux) {
-            installerOptions = listOf("--linux-shortcut")
+    register<org.beryx.jlink.JPackageTask>("jpackageWin") {
+        dependsOn("jlink")
+        doFirst {
+            jpackageData.apply {
+                targetPlatformName = "win"
+                imageOptions = listOf(
+                    "--vendor", "Trinity College",
+                    "--copyright", "Copyright 2024",
+                    "--name", "ImageCarousel",
+                    "--description", "Image Carousel Application"
+                )
+                installerType = "exe"
+                installerOptions = listOf(
+                    "--win-dir-chooser",
+                    "--win-menu",
+                    "--win-shortcut",
+                    "--win-per-user-install"
+                )
+            }
         }
     }
 }
