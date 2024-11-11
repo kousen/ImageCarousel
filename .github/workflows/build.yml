@@ -1,0 +1,65 @@
+name: Build Installers
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers on version tags like v1.0.0
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+        include:
+          - os: macos-latest
+            task: jpackageMac
+          - os: windows-latest
+            task: jpackageWin
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v3
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'gradle'  # Caches Gradle dependencies
+
+      - name: Make Gradle wrapper executable
+        if: runner.os == 'Linux' || runner.os == 'macOS'
+        run: chmod +x ./gradlew
+
+      - name: Build with Gradle
+        run: ./gradlew ${{ matrix.task }}
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v3
+        with:
+          name: installer-${{ matrix.os }}
+          path: |
+            build/jpackage/*.exe
+            build/jpackage/*.pkg
+            build/jpackage/*.dmg
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all installers
+        uses: actions/download-artifact@v3
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            installer-windows-latest/*.exe
+            installer-macos-latest/*.pkg
+            installer-macos-latest/*.dmg
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
