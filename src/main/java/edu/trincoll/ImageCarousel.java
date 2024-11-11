@@ -1,7 +1,5 @@
 package edu.trincoll;
 
-import javafx.animation.KeyFrame;
-import javafx.animation.Timeline;
 import javafx.application.Application;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
@@ -14,12 +12,14 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
+import javafx.stage.Screen;
 import javafx.util.Duration;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
+import javafx.geometry.Rectangle2D;
 
 import java.io.File;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
 import java.util.List;
 
 public class ImageCarousel extends Application {
@@ -38,20 +38,53 @@ public class ImageCarousel extends Application {
     private Button pauseButton;
     private boolean isPaused = false;
 
+    private ZoomController zoomController;
+    private TransitionController transitionController;
+    private ThumbnailView thumbnailView;
+    private StackPane viewContainer;
+    private boolean showingThumbnails = false;
+    private Stage primaryStage;
+
     @Override
     public void start(Stage primaryStage) {
+        initializeComponents(primaryStage);
+        setupMainContainer();
+        setupWindow();
+        setupEventHandlers();
+        loadInitialImages();
+    }
+
+    private void initializeComponents(Stage stage) {
+        this.primaryStage = stage;
         prefsManager = new PreferencesManager();
         statusBar = new StatusBar();
+        transitionController = new TransitionController(imageContainer);
+        thumbnailView = new ThumbnailView();
 
-        // Create menu bar and control buttons
-        MenuBar menuBar = createMenuBar(primaryStage);
-        ToolBar toolbar = createToolbar();
-
-        // Initialize UI components with better positioning
         imageContainer = new StackPane();
         imageContainer.setStyle("-fx-background-color: black;");
-
         VBox.setVgrow(imageContainer, Priority.ALWAYS);
+
+        // Initialize zoom controller with a blank ImageView
+        ImageView initialView = new ImageView();
+        initialView.setPreserveRatio(true);
+        zoomController = new ZoomController(initialView);
+        zoomController.getScrollPane().setStyle("-fx-background-color: black;");
+
+        viewContainer = new StackPane();
+        viewContainer.setStyle("-fx-background-color: black;");
+        viewContainer.getChildren().add(zoomController.getScrollPane());
+        VBox.setVgrow(viewContainer, Priority.ALWAYS);
+
+        // Set up thumbnail selection handler
+        thumbnailView.setOnThumbnailSelected(index -> {
+            currentIndex = index;
+            setImage(images.get(currentIndex));
+        });
+    }
+
+    private void setupMainContainer() {
+        MenuBar menuBar = createMenuBar();
 
         toggleFullScreenButton = new Button("Toggle Full Screen");
         toggleFullScreenButton.setStyle("-fx-background-color: white; -fx-padding: 5 10 5 10;");
@@ -60,13 +93,115 @@ public class ImageCarousel extends Application {
         buttonContainer.setPadding(new Insets(10));
         buttonContainer.setAlignment(Pos.TOP_RIGHT);
 
-        StackPane mainContainer = new StackPane(imageContainer, buttonContainer);
+        StackPane mainContainer = new StackPane();
+        mainContainer.getChildren().addAll(viewContainer, buttonContainer);
         VBox.setVgrow(mainContainer, Priority.ALWAYS);
 
-        root = new VBox(menuBar, toolbar, mainContainer, statusBar);
+        root = new VBox(menuBar, createToolbar(), mainContainer, statusBar);
         root.setFillWidth(true);
+    }
 
-        // Try to load images from last used directory, fall back to resources, then user.home
+    private void setupWindow() {
+        Rectangle2D screenBounds = Screen.getPrimary().getVisualBounds();
+        double initialWidth = Math.min(800, screenBounds.getWidth() * 0.8);
+        double initialHeight = Math.min(600, screenBounds.getHeight() * 0.8);
+
+        primaryStage.setWidth(initialWidth);
+        primaryStage.setHeight(initialHeight);
+        primaryStage.setMinWidth(400);
+        primaryStage.setMinHeight(300);
+
+        Scene scene = createScene();
+        primaryStage.setScene(scene);
+        primaryStage.setTitle("Image Carousel");
+
+        fullScreenHandler = new FullScreenHandler(primaryStage, imageContainer, toggleFullScreenButton, root);
+    }
+
+    private Scene createScene() {
+        Scene scene = new Scene(root);
+        scene.setOnKeyPressed(event -> {
+            switch (event.getCode()) {
+                case ESCAPE -> {
+                    if (primaryStage.isFullScreen()) {
+                        handleFullScreenToggle();
+                    }
+                }
+                case LEFT -> showPreviousImage();
+                case RIGHT -> showNextImage();
+                case SPACE -> togglePause();
+                case CONTROL -> zoomController.resetZoom();
+            }
+        });
+        return scene;
+    }
+
+    private ToolBar createToolbar() {
+        prevButton = new Button("Previous");
+        nextButton = new Button("Next");
+        pauseButton = new Button("Pause");
+        ToggleButton thumbsButton = new ToggleButton("Thumbnails");
+
+        prevButton.setOnAction(e -> showPreviousImage());
+        nextButton.setOnAction(e -> showNextImage());
+        pauseButton.setOnAction(e -> togglePause());
+        thumbsButton.setOnAction(e -> toggleThumbnailView());
+
+        return new ToolBar(
+                prevButton,
+                pauseButton,
+                nextButton,
+                new Separator(),
+                thumbsButton
+        );
+    }
+
+    private MenuBar createMenuBar() {
+        MenuBar menuBar = new MenuBar();
+        Menu fileMenu = new Menu("File");
+        MenuItem openMenuItem = new MenuItem("Open Directory...");
+
+        openMenuItem.setOnAction(event -> handleOpenDirectory());
+        fileMenu.getItems().add(openMenuItem);
+        menuBar.getMenus().add(fileMenu);
+
+        return menuBar;
+    }
+
+    private void handleOpenDirectory() {
+        stopImageRotation();
+
+        DirectoryChooser directoryChooser = new DirectoryChooser();
+        directoryChooser.setTitle("Select Image Directory");
+
+        File initialDir = currentDirectory != null && Files.exists(currentDirectory)
+                ? currentDirectory.toFile()
+                : new File(System.getProperty("user.home"));
+        directoryChooser.setInitialDirectory(initialDir);
+
+        File selectedDirectory = directoryChooser.showDialog(primaryStage);
+        if (selectedDirectory != null) {
+            loadImages(selectedDirectory.toPath());
+        }
+
+        if (!isPaused) {
+            startImageRotationIfPossible();
+        }
+    }
+
+    private void setupEventHandlers() {
+        primaryStage.fullScreenProperty().addListener((obs, oldVal, newVal) -> {
+            fullScreenHandler.adjustCurrentImageSize();
+            toggleFullScreenButton.setText(newVal ? "Exit Full Screen" : "Toggle Full Screen");
+        });
+
+        primaryStage.widthProperty().addListener((obs, oldVal, newVal) -> handleWindowResize());
+        primaryStage.heightProperty().addListener((obs, oldVal, newVal) -> handleWindowResize());
+
+        toggleFullScreenButton.setOnAction(event -> handleFullScreenToggle());
+    }
+
+    private void loadInitialImages() {
         Path startDirectory = prefsManager.getLastDirectory();
         if (!Files.exists(startDirectory)) {
             startDirectory = Paths.get("src/main/resources");
@@ -74,54 +209,21 @@ public class ImageCarousel extends Application {
                 startDirectory = Paths.get(System.getProperty("user.home"));
             }
         }
-        loadImages(startDirectory);
-
-        Scene scene = new Scene(root);
-        scene.setOnKeyPressed(event -> {
-            switch (event.getCode()) {
-                case ESCAPE:
-                    if (primaryStage.isFullScreen()) {
-                        handleFullScreenToggle();
-                    }
-                    break;
-                case LEFT:
-                    showPreviousImage();
-                    break;
-                case RIGHT:
-                    showNextImage();
-                    break;
-                case SPACE:
-                    togglePause();
-                    break;
-            }
-        });
-
-        primaryStage.setScene(scene);
-        primaryStage.setTitle("Image Carousel");
-
-        fullScreenHandler = new FullScreenHandler(primaryStage, imageContainer, toggleFullScreenButton, root);
-
-        primaryStage.fullScreenProperty().addListener((obs, oldVal, newVal) -> {
-            fullScreenHandler.adjustCurrentImageSize();
-            toggleFullScreenButton.setText(newVal ? "Exit Full Screen" : "Toggle Full Screen");
-        });
-
-        toggleFullScreenButton.setOnAction(event -> handleFullScreenToggle());
 
         primaryStage.show();
+        loadImages(startDirectory);
         startImageRotationIfPossible();
     }
 
-    private ToolBar createToolbar() {
-        prevButton = new Button("Previous");
-        nextButton = new Button("Next");
-        pauseButton = new Button("Pause");
-
-        prevButton.setOnAction(e -> showPreviousImage());
-        nextButton.setOnAction(e -> showNextImage());
-        pauseButton.setOnAction(e -> togglePause());
-
-        return new ToolBar(prevButton, pauseButton, nextButton);
+    private void toggleThumbnailView() {
+        showingThumbnails = !showingThumbnails;
+        viewContainer.getChildren().clear();
+        if (showingThumbnails) {
+            thumbnailView.setImages(images, currentIndex);
+            viewContainer.getChildren().add(thumbnailView.getScrollPane());
+        } else {
+            viewContainer.getChildren().add(zoomController.getScrollPane());
+        }
     }
 
     private void togglePause() {
@@ -147,38 +249,6 @@ public class ImageCarousel extends Application {
             currentIndex = (currentIndex + 1) % images.size();
             setImage(images.get(currentIndex));
         }
-    }
-
-    private MenuBar createMenuBar(Stage stage) {
-        MenuBar menuBar = new MenuBar();
-        Menu fileMenu = new Menu("File");
-        MenuItem openMenuItem = new MenuItem("Open Directory...");
-
-        openMenuItem.setOnAction(event -> {
-            stopImageRotation();
-
-            DirectoryChooser directoryChooser = new DirectoryChooser();
-            directoryChooser.setTitle("Select Image Directory");
-
-            File initialDir = currentDirectory != null && Files.exists(currentDirectory)
-                    ? currentDirectory.toFile()
-                    : new File(System.getProperty("user.home"));
-            directoryChooser.setInitialDirectory(initialDir);
-
-            File selectedDirectory = directoryChooser.showDialog(stage);
-            if (selectedDirectory != null) {
-                loadImages(selectedDirectory.toPath());
-                if (!isPaused) {
-                    startImageRotationIfPossible();
-                }
-            } else if (!isPaused) {
-                startImageRotationIfPossible();
-            }
-        });
-
-        fileMenu.getItems().add(openMenuItem);
-        menuBar.getMenus().add(fileMenu);
-        return menuBar;
     }
 
     private void loadImages(Path directory) {
@@ -237,41 +307,84 @@ public class ImageCarousel extends Application {
     private void startImageRotation() {
         stopImageRotation();
         rotationTimeline = new Timeline(
-                new KeyFrame(Duration.seconds(3), event -> rotateImage())
+                new KeyFrame(Duration.seconds(3), event -> showNextImage())
         );
         rotationTimeline.setCycleCount(Timeline.INDEFINITE);
         rotationTimeline.play();
     }
 
-    private void rotateImage() {
-        showNextImage();
+    private void handleWindowResize() {
+        if (images != null && !images.isEmpty()) {
+            setImage(images.get(currentIndex));
+        }
     }
 
     private void setImage(Image image) {
-        imageContainer.getChildren().clear();
-        ImageView imageView = new ImageView(image);
-        imageView.setPreserveRatio(true);
+        if (image == null) return;
 
-        imageView.fitWidthProperty().bind(imageContainer.widthProperty());
-        imageView.fitHeightProperty().bind(imageContainer.heightProperty());
+        ImageView oldView = getCurrentImageView();
+        ImageView newView = new ImageView(image);
+        newView.setPreserveRatio(true);
 
-        imageContainer.getChildren().add(imageView);
+        // Calculate scaling to fit the window
+        double windowWidth = primaryStage.getWidth();
+        double windowHeight = primaryStage.getHeight()
+                              - root.lookup(".tool-bar").getBoundsInLocal().getHeight()
+                              - root.lookup(".menu-bar").getBoundsInLocal().getHeight()
+                              - statusBar.getHeight();
 
-        if (fullScreenHandler != null) {
-            fullScreenHandler.adjustCurrentImageSize();
+        double scale = Math.min(
+                windowWidth / image.getWidth(),
+                windowHeight / image.getHeight()
+        );
+
+        newView.setFitWidth(image.getWidth() * scale);
+        newView.setFitHeight(image.getHeight() * scale);
+
+        if (oldView != null && !showingThumbnails) {
+            transitionController.transitionToNewImage(oldView, newView);
+        } else {
+            imageContainer.getChildren().clear();
+            imageContainer.getChildren().add(newView);
         }
 
-        // Update status bar with current image info
-        String imageInfo = String.format("Image %d of %d", currentIndex + 1, images.size());
+        zoomController.setImage(newView);
+
+        if (showingThumbnails) {
+            thumbnailView.updateSelection(currentIndex);
+        }
+
+        updateStatusBar(image);
+    }
+
+    private ImageView getCurrentImageView() {
+        return imageContainer.getChildren().stream()
+                .filter(node -> node instanceof ImageView)
+                .map(node -> (ImageView) node)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private void updateStatusBar(Image image) {
+        StringBuilder info = new StringBuilder();
+
+        // Add image count
+        info.append(String.format("Image %d of %d", currentIndex + 1, images.size()));
+
+        // Add image dimensions
+        info.append(String.format(" (%dx%d)", (int)image.getWidth(), (int)image.getHeight()));
+
+        // Add directory information
         if (currentDirectory != null) {
             try {
                 String filename = prefsManager.getLastDirectory().relativize(currentDirectory).toString();
-                imageInfo += " - " + filename;
+                info.append(" - ").append(filename);
             } catch (IllegalArgumentException e) {
-                imageInfo += " - " + currentDirectory.getFileName();
+                info.append(" - ").append(currentDirectory.getFileName());
             }
         }
-        statusBar.updateImageInfo(imageInfo);
+
+        statusBar.updateImageInfo(info.toString());
     }
 
     private void handleFullScreenToggle() {
